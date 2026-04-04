@@ -17,7 +17,7 @@
 
     "bun-types": ["bun-types@1.3.11", "", { "dependencies": { "@types/node": "*" } }, "sha512-1KGPpoxQWl9f6wcZh57LvrPIInQMn2TQ7jsgxqpRzg+l0QPOFvJVH7HmvHo/AiPgwXy+/Thf6Ov3EdVn1vOabg=="],
 
-    "deus-ex-synapse": ["deus-ex-synapse@github:Deus-Ex-Crustacean/Synapse#b2b673a", {}, "Deus-Ex-Crustacean-Synapse-b2b673a", "sha512-a0FOdtKU+s7EvQlRUk/NHiDl3dRUFjWcF0frQ9aUMK/IGmWChu1UeDpE7yjSPBf9gp8t2UNL9Xd4I6imx+Jgew=="],
+    "deus-ex-synapse": ["deus-ex-synapse@github:Deus-Ex-Crustacean/Synapse#10ccf90", {}, "Deus-Ex-Crustacean-Synapse-10ccf90", "sha512-H7VsIsIFqZmpRE/0GWJKr7y51hod3dEB9iD1c3yqtYRfrF6UTubO0B3VstOjioZ23i8JoRngF0CSdrW414errw=="],
 
     "undici-types": ["undici-types@7.18.2", "", {}, "sha512-AsuCzffGHJybSaRrmr5eHr81mwJU3kjw6M+uprWvCXiNeN9SOGwQ3Jn8jb8m3Z6izVgknn1R0FTCEAP2QrLY/w=="],
   }
