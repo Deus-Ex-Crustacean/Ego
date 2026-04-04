@@ -100,32 +100,38 @@ Bun.serve({
 console.log(`Ego listening on port ${PORT}`);
 
 // LaunchDarkly with Observability
-const ldClient = LaunchDarkly.init("sdk-fadd54c8-967d-40ac-8848-e75fe4f28cb6", {
+const ldSdkKey = process.env.LD_SDK_KEY;
+if (!ldSdkKey) {
+  console.warn("LD_SDK_KEY not set — LaunchDarkly disabled");
+}
+const ldClient = ldSdkKey ? LaunchDarkly.init(ldSdkKey, {
   plugins: [
     new Observability({
       serviceName: "ego",
       serviceVersion: process.env.npm_package_version || "dev",
-      environment: "production",
+      environment: process.env.NODE_ENV || "production",
     }),
   ],
-});
+}) : null;
 const ldContext: LaunchDarkly.LDContext = { kind: "service", key: "ego", name: "Ego" };
 
-ldClient.on("ready", () => {
-  console.log("LaunchDarkly client ready");
-});
+if (ldClient) {
+  ldClient.on("ready", () => {
+    console.log("LaunchDarkly client ready");
+  });
 
-ldClient.on("failed", (err) => {
-  console.error("LaunchDarkly client failed to initialize:", err);
-});
+  ldClient.on("failed", (err) => {
+    console.error("LaunchDarkly client failed to initialize:", err);
+  });
+}
 
 process.on("SIGINT", async () => {
-  await ldClient.close();
+  await ldClient?.close();
   process.exit(0);
 });
 
 process.on("SIGTERM", async () => {
-  await ldClient.close();
+  await ldClient?.close();
   process.exit(0);
 });
 
