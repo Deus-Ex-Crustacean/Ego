@@ -1,3 +1,4 @@
+import * as LaunchDarkly from "@launchdarkly/node-server-sdk";
 import { initDb, db } from "./db.ts";
 import { PORT } from "./config.ts";
 import { generateKeyPair } from "./crypto.ts";
@@ -96,3 +97,27 @@ Bun.serve({
 });
 
 console.log(`Ego listening on port ${PORT}`);
+
+// LaunchDarkly
+const ldClient = LaunchDarkly.init("sdk-699cdf13-faef-4bf9-99dc-1dd8972f1fa9");
+const ldContext: LaunchDarkly.LDContext = { kind: "service", key: "ego", name: "Ego" };
+
+ldClient.on("ready", () => {
+  console.log("LaunchDarkly client ready");
+});
+
+ldClient.on("failed", (err) => {
+  console.error("LaunchDarkly client failed to initialize:", err);
+});
+
+process.on("SIGINT", async () => {
+  await ldClient.close();
+  process.exit(0);
+});
+
+process.on("SIGTERM", async () => {
+  await ldClient.close();
+  process.exit(0);
+});
+
+export { ldClient, ldContext };
