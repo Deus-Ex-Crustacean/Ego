@@ -35,8 +35,3 @@ export interface ScimTarget {
   token: string;
   active: boolean;
 }
-
-export interface Bootstrap {
-  token_hash: string;
-  consumed: boolean;
-}

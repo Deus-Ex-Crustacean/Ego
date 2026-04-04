@@ -45,9 +45,6 @@ export function initDb() {
       active INTEGER NOT NULL
     );
 
-    CREATE TABLE IF NOT EXISTS bootstrap (
-      token_hash TEXT NOT NULL,
-      consumed INTEGER NOT NULL DEFAULT 0
-    );
+    -- bootstrap token is ephemeral (in-memory only)
   `);
 }
