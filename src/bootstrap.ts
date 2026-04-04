@@ -7,8 +7,13 @@ function hashToken(token: string): string {
 }
 
 export function initBootstrap() {
-  const existing = db.query("SELECT * FROM bootstrap").get() as Bootstrap | null;
-  if (existing) return;
+  // If there are admin users, no bootstrap needed
+  const adminCount = db.query("SELECT COUNT(*) as count FROM users WHERE admin = 1").get() as { count: number };
+  if (adminCount.count > 0) return;
+
+  // No admins exist — generate a fresh bootstrap token
+  // (replaces any previously consumed token)
+  db.query("DELETE FROM bootstrap").run();
 
   const token = randomBytes(32).toString("hex");
   const hash = hashToken(token);
