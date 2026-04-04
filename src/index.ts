@@ -1,4 +1,5 @@
 import * as LaunchDarkly from "@launchdarkly/node-server-sdk";
+import { Observability } from "@launchdarkly/observability-node";
 import { initDb, db } from "./db.ts";
 import { PORT } from "./config.ts";
 import { generateKeyPair } from "./crypto.ts";
@@ -98,8 +99,16 @@ Bun.serve({
 
 console.log(`Ego listening on port ${PORT}`);
 
-// LaunchDarkly
-const ldClient = LaunchDarkly.init("sdk-699cdf13-faef-4bf9-99dc-1dd8972f1fa9");
+// LaunchDarkly with Observability
+const ldClient = LaunchDarkly.init("sdk-699cdf13-faef-4bf9-99dc-1dd8972f1fa9", {
+  plugins: [
+    new Observability({
+      serviceName: "ego",
+      serviceVersion: process.env.npm_package_version || "dev",
+      environment: process.env.NODE_ENV || "development",
+    }),
+  ],
+});
 const ldContext: LaunchDarkly.LDContext = { kind: "service", key: "ego", name: "Ego" };
 
 ldClient.on("ready", () => {
