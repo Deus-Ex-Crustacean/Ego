@@ -1,4 +1,4 @@
-import { createHash, createSign, createVerify, generateKeyPairSync, type KeyObject } from "crypto";
+import { createHash, createSign, createVerify, createPublicKey, generateKeyPairSync, type KeyObject } from "crypto";
 import { db } from "./db.ts";
 import { TOKEN_EXPIRY_SECONDS } from "./config.ts";
 import type { SigningKey } from "./types.ts";
@@ -75,7 +75,7 @@ export function verifyJwt(token: string): Record<string, unknown> | null {
 }
 
 function pemToJwk(pem: string, kid: string) {
-  const keyObj = require("crypto").createPublicKey(pem);
+  const keyObj = createPublicKey(pem);
   const jwk = keyObj.export({ format: "jwk" });
   return { ...jwk, kid, use: "sig", alg: "RS256" };
 }

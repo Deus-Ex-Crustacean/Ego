@@ -11,6 +11,15 @@ export async function handleCreateScimTarget(req: Request): Promise<Response> {
     return Response.json({ error: "name, url, and token required" }, { status: 400 });
   }
 
+  try {
+    const parsed = new URL(body.url);
+    if (!["http:", "https:"].includes(parsed.protocol)) {
+      return Response.json({ error: "url must use http or https" }, { status: 400 });
+    }
+  } catch {
+    return Response.json({ error: "invalid url" }, { status: 400 });
+  }
+
   const id = randomUUID();
   db.query("INSERT INTO scim_targets (id, name, url, token, active) VALUES (?, ?, ?, ?, ?)").run(
     id, body.name, body.url, body.token, 1

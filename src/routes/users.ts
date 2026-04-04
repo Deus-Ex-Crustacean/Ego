@@ -37,8 +37,10 @@ export async function handleCreateUser(req: Request): Promise<Response> {
   }
 
   if (auth.type === "bootstrap") {
-    const bootstrapToken = req.headers.get("x-bootstrap-token")!;
-    consumeBootstrap(bootstrapToken);
+    const bootstrapToken = req.headers.get("x-bootstrap-token");
+    if (!bootstrapToken || !consumeBootstrap(bootstrapToken)) {
+      return Response.json({ error: "invalid bootstrap token" }, { status: 401 });
+    }
   }
 
   const user = db.query("SELECT * FROM users WHERE id = ?").get(id) as User;

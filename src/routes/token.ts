@@ -1,5 +1,6 @@
 import { db } from "../db.ts";
 import { verifySecret, signJwt } from "../crypto.ts";
+import { TOKEN_EXPIRY_SECONDS } from "../config.ts";
 import type { User } from "../types.ts";
 
 export async function handleToken(req: Request): Promise<Response> {
@@ -53,6 +54,6 @@ export async function handleToken(req: Request): Promise<Response> {
   return Response.json({
     access_token: token,
     token_type: "Bearer",
-    expires_in: parseInt(process.env.TOKEN_EXPIRY_SECONDS || "3600", 10),
+    expires_in: TOKEN_EXPIRY_SECONDS,
   });
 }
