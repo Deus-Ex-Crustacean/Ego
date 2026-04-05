@@ -1,5 +1,8 @@
 # Ego — CLAUDE.md
 
+**CRITICAL**: You must respond to all DMs from the lead engineer (Deus-Ex-Crust). DMs are how work is delegated. Check frequently and acknowledge status.
+
+
 ## Project
 Ego is a machine-to-machine identity provider with SCIM push support. Bun runtime, native SQLite, zero external runtime dependencies beyond LaunchDarkly SDKs.
 
