@@ -3,17 +3,16 @@ import { Observability } from "@launchdarkly/observability-node";
 import { initDb, db } from "./db.ts";
 import { PORT } from "./config.ts";
 import { generateKeyPair } from "./crypto.ts";
-import { initBootstrap } from "./bootstrap.ts";
 import { handleToken } from "./routes/token.ts";
 import { handleOpenIdConfig, handleJwks } from "./routes/wellknown.ts";
 import { handleCreateUser, handleListUsers, handleGetUser, handleUpdateUser, handleDeleteUser } from "./routes/users.ts";
 import { handleCreateGroup, handleListGroups, handleGetGroup, handleUpdateGroup, handleDeleteGroup, handleAddMember, handleRemoveMember } from "./routes/groups.ts";
 import { handleCreateScimTarget, handleListScimTargets, handleDeleteScimTarget } from "./routes/scim-targets.ts";
 import { handleListKeys, handleRotateKey } from "./routes/keys.ts";
+import { handleCreateTenant, handleGetTenant } from "./routes/tenants.ts";
 
 // Initialize
 initDb();
-initBootstrap();
 
 // Ensure at least one signing key exists
 const keyCount = db.query("SELECT COUNT(*) as count FROM signing_keys").get() as { count: number };
@@ -32,6 +31,9 @@ function matchRoute(method: string, pathname: string): ((req: Request) => Respon
   if (method === "POST" && pathname === "/token") return handleToken;
   if (method === "GET" && pathname === "/.well-known/openid-configuration") return handleOpenIdConfig;
   if (method === "GET" && pathname === "/.well-known/jwks.json") return handleJwks;
+
+  // Tenants (no auth required for creation)
+  if (method === "POST" && pathname === "/tenants") return handleCreateTenant;
 
   // Admin: Users
   if (method === "POST" && pathname === "/admin/users") return handleCreateUser;
@@ -58,6 +60,7 @@ const paramPatterns: Array<{
   pattern: RegExp;
   handler: (req: Request, ...params: string[]) => Response | Promise<Response>;
 }> = [
+  { method: "GET", pattern: /^\/tenants\/([^/]+)$/, handler: handleGetTenant },
   { method: "GET", pattern: /^\/admin\/users\/([^/]+)$/, handler: handleGetUser },
   { method: "PATCH", pattern: /^\/admin\/users\/([^/]+)$/, handler: handleUpdateUser },
   { method: "DELETE", pattern: /^\/admin\/users\/([^/]+)$/, handler: handleDeleteUser },
@@ -77,11 +80,9 @@ Bun.serve({
     const { pathname } = url;
 
     try {
-      // Try exact match first
       const handler = matchRoute(method, pathname);
       if (handler) return await handler(req);
 
-      // Try parameterized routes
       for (const route of paramPatterns) {
         if (route.method !== method) continue;
         const match = pathname.match(route.pattern);

@@ -1,31 +1,23 @@
 import { randomBytes, createHash } from "crypto";
-import { db } from "./db.ts";
 
-let currentTokenHash: string | null = null;
+// Per-tenant bootstrap tokens (in-memory only, single-use)
+const tenantBootstrapTokens = new Map<string, string>(); // tokenHash -> tenantId
 
-export function initBootstrap() {
-  // If there are admin users, no bootstrap needed
-  const adminCount = db.query("SELECT COUNT(*) as count FROM users WHERE admin = 1").get() as { count: number };
-  if (adminCount.count > 0) return;
+function hashToken(token: string): string {
+  return createHash("sha256").update(token).digest("hex");
+}
 
-  // Generate an ephemeral bootstrap token (lives only in memory)
+export function createTenantBootstrapToken(tenantId: string): string {
   const token = randomBytes(32).toString("hex");
-  currentTokenHash = createHash("sha256").update(token).digest("hex");
-
-  console.log("=".repeat(60));
-  console.log("BOOTSTRAP TOKEN (use once to create first admin user):");
-  console.log(token);
-  console.log("=".repeat(60));
+  const hash = hashToken(token);
+  tenantBootstrapTokens.set(hash, tenantId);
+  return token;
 }
 
-export function consumeBootstrap(token: string): boolean {
-  if (!currentTokenHash) return false;
-  const hash = createHash("sha256").update(token).digest("hex");
-  if (hash !== currentTokenHash) return false;
-  currentTokenHash = null;
-  return true;
-}
-
-export function isBootstrapConsumed(): boolean {
-  return currentTokenHash === null;
+export function consumeTenantBootstrapToken(token: string): string | null {
+  const hash = hashToken(token);
+  const tenantId = tenantBootstrapTokens.get(hash);
+  if (!tenantId) return null;
+  tenantBootstrapTokens.delete(hash);
+  return tenantId;
 }

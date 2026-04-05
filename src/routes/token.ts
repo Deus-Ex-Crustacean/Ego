@@ -48,6 +48,7 @@ export async function handleToken(req: Request): Promise<Response> {
     sub: user.id,
     username: user.username,
     admin: !!user.admin,
+    tenant_id: user.tenant_id,
     groups: groups.map((g) => g.name),
   });
 

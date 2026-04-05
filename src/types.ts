@@ -1,5 +1,13 @@
+export interface Tenant {
+  id: string;
+  name: string;
+  slug: string;
+  created_at: number;
+}
+
 export interface User {
   id: string;
+  tenant_id: string;
   username: string;
   client_secret: string;
   machine: boolean;
@@ -11,6 +19,7 @@ export interface User {
 
 export interface Group {
   id: string;
+  tenant_id: string;
   name: string;
   created_at: number;
 }
@@ -30,6 +39,7 @@ export interface SigningKey {
 
 export interface ScimTarget {
   id: string;
+  tenant_id: string;
   name: string;
   url: string;
   token: string;

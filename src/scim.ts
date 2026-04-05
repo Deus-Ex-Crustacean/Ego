@@ -1,8 +1,8 @@
 import { db } from "./db.ts";
 import type { User, Group, ScimTarget } from "./types.ts";
 
-function getActiveTargets(): ScimTarget[] {
-  return db.query("SELECT * FROM scim_targets WHERE active = 1").all() as ScimTarget[];
+function getActiveTargets(tenantId: string): ScimTarget[] {
+  return db.query("SELECT * FROM scim_targets WHERE tenant_id = ? AND active = 1").all(tenantId) as ScimTarget[];
 }
 
 function userToScim(user: User) {
@@ -49,7 +49,7 @@ async function pushToTarget(target: ScimTarget, path: string, method: string, bo
 }
 
 export async function pushUserToAll(user: User, op: "create" | "update" | "delete") {
-  const targets = getActiveTargets();
+  const targets = getActiveTargets(user.tenant_id);
   const promises = targets.map((t) => {
     if (op === "delete") return pushToTarget(t, `/Users/${user.id}`, "DELETE");
     if (op === "create") return pushToTarget(t, "/Users", "POST", userToScim(user));
@@ -59,7 +59,7 @@ export async function pushUserToAll(user: User, op: "create" | "update" | "delet
 }
 
 export async function pushGroupToAll(group: Group, memberIds: string[], op: "create" | "update" | "delete") {
-  const targets = getActiveTargets();
+  const targets = getActiveTargets(group.tenant_id);
   const promises = targets.map((t) => {
     if (op === "delete") return pushToTarget(t, `/Groups/${group.id}`, "DELETE");
     if (op === "create") return pushToTarget(t, "/Groups", "POST", groupToScim(group, memberIds));

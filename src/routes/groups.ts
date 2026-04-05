@@ -11,7 +11,7 @@ function getGroupMembers(groupId: string): string[] {
 }
 
 export async function handleCreateGroup(req: Request): Promise<Response> {
-  requireAdmin(req);
+  const { tenantId } = requireAdmin(req);
   const body = await req.json();
   if (!body.name) return Response.json({ error: "name required" }, { status: 400 });
 
@@ -19,7 +19,7 @@ export async function handleCreateGroup(req: Request): Promise<Response> {
   const now = Math.floor(Date.now() / 1000);
 
   try {
-    db.query("INSERT INTO groups (id, name, created_at) VALUES (?, ?, ?)").run(id, body.name, now);
+    db.query("INSERT INTO groups (id, tenant_id, name, created_at) VALUES (?, ?, ?, ?)").run(id, tenantId, body.name, now);
   } catch (err: any) {
     if (err.message?.includes("UNIQUE")) {
       return Response.json({ error: "group name already exists" }, { status: 409 });
@@ -34,22 +34,22 @@ export async function handleCreateGroup(req: Request): Promise<Response> {
 }
 
 export function handleListGroups(req: Request): Response {
-  requireAdmin(req);
-  const groups = db.query("SELECT * FROM groups").all() as Group[];
+  const { tenantId } = requireAdmin(req);
+  const groups = db.query("SELECT * FROM groups WHERE tenant_id = ?").all(tenantId) as Group[];
   return Response.json(groups);
 }
 
 export function handleGetGroup(req: Request, id: string): Response {
-  requireAdmin(req);
-  const group = db.query("SELECT * FROM groups WHERE id = ?").get(id) as Group | null;
+  const { tenantId } = requireAdmin(req);
+  const group = db.query("SELECT * FROM groups WHERE id = ? AND tenant_id = ?").get(id, tenantId) as Group | null;
   if (!group) return Response.json({ error: "not found" }, { status: 404 });
   const members = getGroupMembers(id);
   return Response.json({ ...group, members });
 }
 
 export async function handleUpdateGroup(req: Request, id: string): Promise<Response> {
-  requireAdmin(req);
-  const group = db.query("SELECT * FROM groups WHERE id = ?").get(id) as Group | null;
+  const { tenantId } = requireAdmin(req);
+  const group = db.query("SELECT * FROM groups WHERE id = ? AND tenant_id = ?").get(id, tenantId) as Group | null;
   if (!group) return Response.json({ error: "not found" }, { status: 404 });
 
   const body = await req.json();
@@ -64,8 +64,8 @@ export async function handleUpdateGroup(req: Request, id: string): Promise<Respo
 }
 
 export async function handleDeleteGroup(req: Request, id: string): Promise<Response> {
-  requireAdmin(req);
-  const group = db.query("SELECT * FROM groups WHERE id = ?").get(id) as Group | null;
+  const { tenantId } = requireAdmin(req);
+  const group = db.query("SELECT * FROM groups WHERE id = ? AND tenant_id = ?").get(id, tenantId) as Group | null;
   if (!group) return Response.json({ error: "not found" }, { status: 404 });
 
   db.query("DELETE FROM group_members WHERE group_id = ?").run(id);
@@ -76,14 +76,14 @@ export async function handleDeleteGroup(req: Request, id: string): Promise<Respo
 }
 
 export async function handleAddMember(req: Request, groupId: string): Promise<Response> {
-  requireAdmin(req);
-  const group = db.query("SELECT * FROM groups WHERE id = ?").get(groupId) as Group | null;
+  const { tenantId } = requireAdmin(req);
+  const group = db.query("SELECT * FROM groups WHERE id = ? AND tenant_id = ?").get(groupId, tenantId) as Group | null;
   if (!group) return Response.json({ error: "group not found" }, { status: 404 });
 
   const body = await req.json();
   if (!body.userId) return Response.json({ error: "userId required" }, { status: 400 });
 
-  const user = db.query("SELECT id FROM users WHERE id = ?").get(body.userId);
+  const user = db.query("SELECT id FROM users WHERE id = ? AND tenant_id = ?").get(body.userId, tenantId);
   if (!user) return Response.json({ error: "user not found" }, { status: 404 });
 
   try {
@@ -102,8 +102,8 @@ export async function handleAddMember(req: Request, groupId: string): Promise<Re
 }
 
 export async function handleRemoveMember(req: Request, groupId: string, userId: string): Promise<Response> {
-  requireAdmin(req);
-  const group = db.query("SELECT * FROM groups WHERE id = ?").get(groupId) as Group | null;
+  const { tenantId } = requireAdmin(req);
+  const group = db.query("SELECT * FROM groups WHERE id = ? AND tenant_id = ?").get(groupId, tenantId) as Group | null;
   if (!group) return Response.json({ error: "group not found" }, { status: 404 });
 
   const result = db.query("DELETE FROM group_members WHERE group_id = ? AND user_id = ?").run(groupId, userId);
