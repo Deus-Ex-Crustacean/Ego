@@ -1,7 +1,7 @@
 import { db } from "../db.ts";
 import { verifySecret, signJwt } from "../crypto.ts";
 import { TOKEN_EXPIRY_SECONDS } from "../config.ts";
-import type { User } from "../types.ts";
+import type { Workspace } from "../types.ts";
 
 export async function handleToken(req: Request): Promise<Response> {
   const contentType = req.headers.get("content-type") || "";
@@ -30,26 +30,20 @@ export async function handleToken(req: Request): Promise<Response> {
     return Response.json({ error: "invalid_request" }, { status: 400 });
   }
 
-  const user = db.query("SELECT * FROM users WHERE username = ? AND active = 1").get(clientId) as User | null;
-  if (!user) {
+  const ws = db.query("SELECT * FROM workspaces WHERE name = ? AND active = 1").get(clientId) as Workspace | null;
+  if (!ws) {
     return Response.json({ error: "invalid_client" }, { status: 401 });
   }
 
-  const valid = await verifySecret(clientSecret, user.client_secret);
+  const valid = await verifySecret(clientSecret, ws.client_secret);
   if (!valid) {
     return Response.json({ error: "invalid_client" }, { status: 401 });
   }
 
-  const groups = db.query(
-    "SELECT g.name FROM groups g JOIN group_members gm ON g.id = gm.group_id WHERE gm.user_id = ?"
-  ).all(user.id) as { name: string }[];
-
   const token = signJwt({
-    sub: user.id,
-    username: user.username,
-    admin: !!user.admin,
-    tenant_id: user.tenant_id,
-    groups: groups.map((g) => g.name),
+    sub: ws.id,
+    name: ws.name,
+    admin: !!ws.admin,
   });
 
   return Response.json({

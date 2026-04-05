@@ -3,16 +3,15 @@ import { Observability } from "@launchdarkly/observability-node";
 import { initDb, db } from "./db.ts";
 import { PORT } from "./config.ts";
 import { generateKeyPair } from "./crypto.ts";
+import { initBootstrap } from "./bootstrap.ts";
 import { handleToken } from "./routes/token.ts";
 import { handleOpenIdConfig, handleJwks } from "./routes/wellknown.ts";
-import { handleCreateUser, handleListUsers, handleGetUser, handleUpdateUser, handleDeleteUser } from "./routes/users.ts";
-import { handleCreateGroup, handleListGroups, handleGetGroup, handleUpdateGroup, handleDeleteGroup, handleAddMember, handleRemoveMember } from "./routes/groups.ts";
-import { handleCreateScimTarget, handleListScimTargets, handleDeleteScimTarget } from "./routes/scim-targets.ts";
+import { handleCreateWorkspace, handleListWorkspaces, handleGetWorkspace, handleDeleteWorkspace } from "./routes/workspaces.ts";
 import { handleListKeys, handleRotateKey } from "./routes/keys.ts";
-import { handleCreateTenant, handleGetTenant } from "./routes/tenants.ts";
 
 // Initialize
 initDb();
+initBootstrap();
 
 // Ensure at least one signing key exists
 const keyCount = db.query("SELECT COUNT(*) as count FROM signing_keys").get() as { count: number };
@@ -27,49 +26,23 @@ if (keyCount.count === 0) {
 
 // Router
 function matchRoute(method: string, pathname: string): ((req: Request) => Response | Promise<Response>) | null {
-  // Public routes
   if (method === "POST" && pathname === "/token") return handleToken;
   if (method === "GET" && pathname === "/.well-known/openid-configuration") return handleOpenIdConfig;
   if (method === "GET" && pathname === "/.well-known/jwks.json") return handleJwks;
-
-  // Tenants (no auth required for creation)
-  if (method === "POST" && pathname === "/tenants") return handleCreateTenant;
-
-  // Admin: Users
-  if (method === "POST" && pathname === "/admin/users") return handleCreateUser;
-  if (method === "GET" && pathname === "/admin/users") return handleListUsers;
-
-  // Admin: Groups
-  if (method === "POST" && pathname === "/admin/groups") return handleCreateGroup;
-  if (method === "GET" && pathname === "/admin/groups") return handleListGroups;
-
-  // Admin: SCIM Targets
-  if (method === "POST" && pathname === "/admin/scim-targets") return handleCreateScimTarget;
-  if (method === "GET" && pathname === "/admin/scim-targets") return handleListScimTargets;
-
-  // Admin: Keys
+  if (method === "POST" && pathname === "/admin/workspaces") return handleCreateWorkspace;
+  if (method === "GET" && pathname === "/admin/workspaces") return handleListWorkspaces;
   if (method === "GET" && pathname === "/admin/keys") return handleListKeys;
   if (method === "POST" && pathname === "/admin/keys/rotate") return handleRotateKey;
-
   return null;
 }
 
-// Parameterized route patterns
 const paramPatterns: Array<{
   method: string;
   pattern: RegExp;
   handler: (req: Request, ...params: string[]) => Response | Promise<Response>;
 }> = [
-  { method: "GET", pattern: /^\/tenants\/([^/]+)$/, handler: handleGetTenant },
-  { method: "GET", pattern: /^\/admin\/users\/([^/]+)$/, handler: handleGetUser },
-  { method: "PATCH", pattern: /^\/admin\/users\/([^/]+)$/, handler: handleUpdateUser },
-  { method: "DELETE", pattern: /^\/admin\/users\/([^/]+)$/, handler: handleDeleteUser },
-  { method: "GET", pattern: /^\/admin\/groups\/([^/]+)$/, handler: handleGetGroup },
-  { method: "PATCH", pattern: /^\/admin\/groups\/([^/]+)$/, handler: handleUpdateGroup },
-  { method: "DELETE", pattern: /^\/admin\/groups\/([^/]+)$/, handler: handleDeleteGroup },
-  { method: "POST", pattern: /^\/admin\/groups\/([^/]+)\/members$/, handler: handleAddMember },
-  { method: "DELETE", pattern: /^\/admin\/groups\/([^/]+)\/members\/([^/]+)$/, handler: handleRemoveMember },
-  { method: "DELETE", pattern: /^\/admin\/scim-targets\/([^/]+)$/, handler: handleDeleteScimTarget },
+  { method: "GET", pattern: /^\/admin\/workspaces\/([^/]+)$/, handler: handleGetWorkspace },
+  { method: "DELETE", pattern: /^\/admin\/workspaces\/([^/]+)$/, handler: handleDeleteWorkspace },
 ];
 
 Bun.serve({
@@ -78,17 +51,14 @@ Bun.serve({
     const url = new URL(req.url);
     const { method } = req;
     const { pathname } = url;
-
     try {
       const handler = matchRoute(method, pathname);
       if (handler) return await handler(req);
-
       for (const route of paramPatterns) {
         if (route.method !== method) continue;
         const match = pathname.match(route.pattern);
         if (match) return await route.handler(req, ...match.slice(1));
       }
-
       return Response.json({ error: "not found" }, { status: 404 });
     } catch (err) {
       if (err instanceof Response) return err;
@@ -102,39 +72,21 @@ console.log(`Ego listening on port ${PORT}`);
 
 // LaunchDarkly with Observability
 const ldSdkKey = process.env.LD_SDK_KEY;
-if (!ldSdkKey) {
-  console.warn("LD_SDK_KEY not set — LaunchDarkly disabled");
-}
+if (!ldSdkKey) console.warn("LD_SDK_KEY not set — LaunchDarkly disabled");
 const ldClient = ldSdkKey ? LaunchDarkly.init(ldSdkKey, {
-  plugins: [
-    new Observability({
-      serviceName: "ego",
-      serviceVersion: process.env.npm_package_version || "dev",
-      environment: process.env.NODE_ENV || "production",
-      consoleMethodsToRecord: ["warn", "error"],
-    }),
-  ],
+  plugins: [new Observability({
+    serviceName: "ego",
+    serviceVersion: process.env.npm_package_version || "dev",
+    environment: process.env.NODE_ENV || "production",
+    consoleMethodsToRecord: ["warn", "error"],
+  })],
 }) : null;
-const ldContext: LaunchDarkly.LDContext = { kind: "service", key: "ego", name: "Ego" };
+export const ldContext: LaunchDarkly.LDContext = { kind: "service", key: "ego", name: "Ego" };
 
 if (ldClient) {
-  ldClient.on("ready", () => {
-    console.log("LaunchDarkly client ready");
-  });
-
-  ldClient.on("failed", (err) => {
-    console.error("LaunchDarkly client failed to initialize:", err);
-  });
+  ldClient.on("ready", () => console.log("LaunchDarkly client ready"));
+  ldClient.on("failed", (err) => console.error("LaunchDarkly client failed:", err));
 }
-
-process.on("SIGINT", async () => {
-  await ldClient?.close();
-  process.exit(0);
-});
-
-process.on("SIGTERM", async () => {
-  await ldClient?.close();
-  process.exit(0);
-});
-
-export { ldClient, ldContext };
+process.on("SIGINT", async () => { await ldClient?.close(); process.exit(0); });
+process.on("SIGTERM", async () => { await ldClient?.close(); process.exit(0); });
+export { ldClient };
