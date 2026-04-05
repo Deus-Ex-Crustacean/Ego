@@ -15,6 +15,15 @@ export function initDb() {
       created_at INTEGER NOT NULL
     );
 
+    CREATE TABLE IF NOT EXISTS users (
+      id TEXT PRIMARY KEY,
+      username TEXT UNIQUE NOT NULL,
+      client_secret TEXT NOT NULL,
+      machine INTEGER NOT NULL DEFAULT 0,
+      active INTEGER NOT NULL DEFAULT 1,
+      created_at INTEGER NOT NULL
+    );
+
     CREATE TABLE IF NOT EXISTS signing_keys (
       id TEXT PRIMARY KEY,
       private_key TEXT NOT NULL,

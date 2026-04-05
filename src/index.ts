@@ -7,6 +7,7 @@ import { initBootstrap } from "./bootstrap.ts";
 import { handleToken } from "./routes/token.ts";
 import { handleOpenIdConfig, handleJwks } from "./routes/wellknown.ts";
 import { handleCreateWorkspace, handleListWorkspaces, handleGetWorkspace, handleDeleteWorkspace } from "./routes/workspaces.ts";
+import { handleCreateUser, handleListUsers, handleGetUser, handleDeleteUser } from "./routes/users.ts";
 import { handleListKeys, handleRotateKey } from "./routes/keys.ts";
 
 // Initialize
@@ -31,6 +32,8 @@ function matchRoute(method: string, pathname: string): ((req: Request) => Respon
   if (method === "GET" && pathname === "/.well-known/jwks.json") return handleJwks;
   if (method === "POST" && pathname === "/admin/workspaces") return handleCreateWorkspace;
   if (method === "GET" && pathname === "/admin/workspaces") return handleListWorkspaces;
+  if (method === "POST" && pathname === "/admin/users") return handleCreateUser;
+  if (method === "GET" && pathname === "/admin/users") return handleListUsers;
   if (method === "GET" && pathname === "/admin/keys") return handleListKeys;
   if (method === "POST" && pathname === "/admin/keys/rotate") return handleRotateKey;
   return null;
@@ -43,6 +46,8 @@ const paramPatterns: Array<{
 }> = [
   { method: "GET", pattern: /^\/admin\/workspaces\/([^/]+)$/, handler: handleGetWorkspace },
   { method: "DELETE", pattern: /^\/admin\/workspaces\/([^/]+)$/, handler: handleDeleteWorkspace },
+  { method: "GET", pattern: /^\/admin\/users\/([^/]+)$/, handler: handleGetUser },
+  { method: "DELETE", pattern: /^\/admin\/users\/([^/]+)$/, handler: handleDeleteUser },
 ];
 
 Bun.serve({
