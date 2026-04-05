@@ -5,31 +5,26 @@ process.env.PORT = "0";
 
 let server: ReturnType<typeof Bun.serve>;
 let baseUrl: string;
-
-// Tenant A state
-let tenantAId: string;
-let tenantABootstrap: string;
-let adminASecret: string;
-let adminAJwt: string;
-let adminAId: string;
-
-// Tenant B state
-let tenantBId: string;
-let tenantBBootstrap: string;
-let adminBJwt: string;
+let bootstrapToken: string;
+let adminSecret: string;
+let adminJwt: string;
+let adminId: string;
 
 beforeAll(async () => {
+  const originalLog = console.log;
+  const logs: string[] = [];
+  console.log = (...args: any[]) => { logs.push(args.join(" ")); originalLog(...args); };
+
   const { initDb, db } = await import("./db.ts");
   const { generateKeyPair } = await import("./crypto.ts");
+  const { initBootstrap } = await import("./bootstrap.ts");
   const { handleToken } = await import("./routes/token.ts");
   const { handleOpenIdConfig, handleJwks } = await import("./routes/wellknown.ts");
-  const { handleCreateUser, handleListUsers, handleGetUser, handleUpdateUser, handleDeleteUser } = await import("./routes/users.ts");
-  const { handleCreateGroup, handleListGroups, handleGetGroup, handleUpdateGroup, handleDeleteGroup, handleAddMember, handleRemoveMember } = await import("./routes/groups.ts");
-  const { handleCreateScimTarget, handleListScimTargets, handleDeleteScimTarget } = await import("./routes/scim-targets.ts");
+  const { handleCreateWorkspace, handleListWorkspaces, handleGetWorkspace, handleDeleteWorkspace } = await import("./routes/workspaces.ts");
   const { handleListKeys, handleRotateKey } = await import("./routes/keys.ts");
-  const { handleCreateTenant, handleGetTenant } = await import("./routes/tenants.ts");
 
   initDb();
+  initBootstrap();
 
   const keyCount = db.query("SELECT COUNT(*) as count FROM signing_keys").get() as { count: number };
   if (keyCount.count === 0) {
@@ -38,34 +33,20 @@ beforeAll(async () => {
     db.query("INSERT INTO signing_keys (id, private_key, public_key, active, created_at) VALUES (?, ?, ?, 1, ?)").run(id, privateKey, publicKey, now);
   }
 
-  const paramPatterns: Array<{
-    method: string;
-    pattern: RegExp;
-    handler: (req: Request, ...params: string[]) => Response | Promise<Response>;
-  }> = [
-    { method: "GET", pattern: /^\/tenants\/([^/]+)$/, handler: handleGetTenant },
-    { method: "GET", pattern: /^\/admin\/users\/([^/]+)$/, handler: handleGetUser },
-    { method: "PATCH", pattern: /^\/admin\/users\/([^/]+)$/, handler: handleUpdateUser },
-    { method: "DELETE", pattern: /^\/admin\/users\/([^/]+)$/, handler: handleDeleteUser },
-    { method: "GET", pattern: /^\/admin\/groups\/([^/]+)$/, handler: handleGetGroup },
-    { method: "PATCH", pattern: /^\/admin\/groups\/([^/]+)$/, handler: handleUpdateGroup },
-    { method: "DELETE", pattern: /^\/admin\/groups\/([^/]+)$/, handler: handleDeleteGroup },
-    { method: "POST", pattern: /^\/admin\/groups\/([^/]+)\/members$/, handler: handleAddMember },
-    { method: "DELETE", pattern: /^\/admin\/groups\/([^/]+)\/members\/([^/]+)$/, handler: handleRemoveMember },
-    { method: "DELETE", pattern: /^\/admin\/scim-targets\/([^/]+)$/, handler: handleDeleteScimTarget },
+  bootstrapToken = logs.find((l) => /^[a-f0-9]{64}$/.test(l.trim()))?.trim() || "";
+  console.log = originalLog;
+
+  const paramPatterns: Array<{ method: string; pattern: RegExp; handler: (req: Request, ...p: string[]) => Response | Promise<Response>; }> = [
+    { method: "GET", pattern: /^\/admin\/workspaces\/([^/]+)$/, handler: handleGetWorkspace },
+    { method: "DELETE", pattern: /^\/admin\/workspaces\/([^/]+)$/, handler: handleDeleteWorkspace },
   ];
 
   function matchRoute(method: string, pathname: string): ((req: Request) => Response | Promise<Response>) | null {
     if (method === "POST" && pathname === "/token") return handleToken;
     if (method === "GET" && pathname === "/.well-known/openid-configuration") return handleOpenIdConfig;
     if (method === "GET" && pathname === "/.well-known/jwks.json") return handleJwks;
-    if (method === "POST" && pathname === "/tenants") return handleCreateTenant;
-    if (method === "POST" && pathname === "/admin/users") return handleCreateUser;
-    if (method === "GET" && pathname === "/admin/users") return handleListUsers;
-    if (method === "POST" && pathname === "/admin/groups") return handleCreateGroup;
-    if (method === "GET" && pathname === "/admin/groups") return handleListGroups;
-    if (method === "POST" && pathname === "/admin/scim-targets") return handleCreateScimTarget;
-    if (method === "GET" && pathname === "/admin/scim-targets") return handleListScimTargets;
+    if (method === "POST" && pathname === "/admin/workspaces") return handleCreateWorkspace;
+    if (method === "GET" && pathname === "/admin/workspaces") return handleListWorkspaces;
     if (method === "GET" && pathname === "/admin/keys") return handleListKeys;
     if (method === "POST" && pathname === "/admin/keys/rotate") return handleRotateKey;
     return null;
@@ -75,15 +56,13 @@ beforeAll(async () => {
     port: 0,
     async fetch(req) {
       const url = new URL(req.url);
-      const { method } = req;
-      const { pathname } = url;
       try {
-        const handler = matchRoute(method, pathname);
+        const handler = matchRoute(req.method, url.pathname);
         if (handler) return await handler(req);
-        for (const route of paramPatterns) {
-          if (route.method !== method) continue;
-          const match = pathname.match(route.pattern);
-          if (match) return await route.handler(req, ...match.slice(1));
+        for (const r of paramPatterns) {
+          if (r.method !== req.method) continue;
+          const m = url.pathname.match(r.pattern);
+          if (m) return await r.handler(req, ...m.slice(1));
         }
         return Response.json({ error: "not found" }, { status: 404 });
       } catch (err) {
@@ -92,156 +71,92 @@ beforeAll(async () => {
       }
     },
   });
-
   baseUrl = `http://localhost:${server.port}`;
 });
 
 afterAll(() => server?.stop());
 
-// Helpers
 function post(path: string, body: object, headers: Record<string, string> = {}) {
-  return fetch(`${baseUrl}${path}`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json", ...headers },
-    body: JSON.stringify(body),
-  });
+  return fetch(`${baseUrl}${path}`, { method: "POST", headers: { "Content-Type": "application/json", ...headers }, body: JSON.stringify(body) });
 }
 function get(path: string, headers: Record<string, string> = {}) {
   return fetch(`${baseUrl}${path}`, { headers });
 }
-function patch(path: string, body: object, headers: Record<string, string> = {}) {
-  return fetch(`${baseUrl}${path}`, {
-    method: "PATCH",
-    headers: { "Content-Type": "application/json", ...headers },
-    body: JSON.stringify(body),
-  });
-}
 function del(path: string, headers: Record<string, string> = {}) {
   return fetch(`${baseUrl}${path}`, { method: "DELETE", headers });
 }
-function authA() { return { Authorization: `Bearer ${adminAJwt}` }; }
-function authB() { return { Authorization: `Bearer ${adminBJwt}` }; }
+function auth() { return { Authorization: `Bearer ${adminJwt}` }; }
 
-// ─── Tenant Creation ───
+// ─── Bootstrap ───
 
-describe("tenant creation", () => {
-  test("create tenant A — no auth required", async () => {
-    const res = await post("/tenants", { name: "Acme Corp" });
-    expect(res.status).toBe(201);
-    const body = await res.json();
-    expect(body.tenant.name).toBe("Acme Corp");
-    expect(body.tenant.slug).toBe("acme-corp");
-    expect(body.bootstrapToken).toMatch(/^[a-f0-9]{64}$/);
-    tenantAId = body.tenant.id;
-    tenantABootstrap = body.bootstrapToken;
+describe("bootstrap", () => {
+  test("bootstrap token generated", () => {
+    expect(bootstrapToken).toMatch(/^[a-f0-9]{64}$/);
   });
 
-  test("create tenant B", async () => {
-    const res = await post("/tenants", { name: "Beta Inc" });
-    expect(res.status).toBe(201);
-    const body = await res.json();
-    tenantBId = body.tenant.id;
-    tenantBBootstrap = body.bootstrapToken;
-  });
-
-  test("duplicate tenant name rejected", async () => {
-    const res = await post("/tenants", { name: "Acme Corp" });
-    expect(res.status).toBe(409);
-  });
-
-  test("name required", async () => {
-    const res = await post("/tenants", {});
-    expect(res.status).toBe(400);
-  });
-});
-
-// ─── Bootstrap + Token ───
-
-describe("bootstrap flow", () => {
-  test("create admin A with tenant A bootstrap token", async () => {
-    const res = await post(
-      "/admin/users",
-      { username: "admin-a" },
-      { "X-Bootstrap-Token": tenantABootstrap }
-    );
-    expect(res.status).toBe(201);
-    const body = await res.json();
-    expect(body.admin).toBe(true);
-    expect(body.tenant_id).toBe(tenantAId);
-    expect(body.client_secret).toMatch(/^[a-f0-9]{64}$/);
-    adminASecret = body.client_secret;
-    adminAId = body.id;
-  });
-
-  test("bootstrap token consumed — cannot reuse", async () => {
-    const res = await post(
-      "/admin/users",
-      { username: "admin-a2" },
-      { "X-Bootstrap-Token": tenantABootstrap }
-    );
+  test("admin endpoints reject unauthenticated requests", async () => {
+    const res = await get("/admin/workspaces");
     expect(res.status).toBe(401);
   });
 
-  test("bootstrap token is tenant-scoped — tenant B token creates tenant B user", async () => {
-    const res = await post(
-      "/admin/users",
-      { username: "admin-b" },
-      { "X-Bootstrap-Token": tenantBBootstrap }
-    );
+  test("create first admin workspace with bootstrap token", async () => {
+    const res = await post("/admin/workspaces", { name: "admin" }, { "X-Bootstrap-Token": bootstrapToken });
     expect(res.status).toBe(201);
     const body = await res.json();
-    expect(body.tenant_id).toBe(tenantBId);
-    const secret = body.client_secret;
-
-    const tokenRes = await fetch(`${baseUrl}/token`, {
-      method: "POST",
-      headers: { "Content-Type": "application/x-www-form-urlencoded" },
-      body: new URLSearchParams({ grant_type: "client_credentials", client_id: "admin-b", client_secret: secret }),
-    });
-    const tokenBody = await tokenRes.json();
-    adminBJwt = tokenBody.access_token;
-    expect(adminBJwt).toBeDefined();
-    const payload = JSON.parse(atob(adminBJwt.split(".")[1]));
-    expect(payload.tenant_id).toBe(tenantBId);
+    expect(body.name).toBe("admin");
+    expect(body.admin).toBe(true);
+    expect(body.client_secret).toMatch(/^[a-f0-9]{64}$/);
+    adminSecret = body.client_secret;
+    adminId = body.id;
   });
 
-  test("get JWT for admin A", async () => {
-    const res = await fetch(`${baseUrl}/token`, {
-      method: "POST",
-      headers: { "Content-Type": "application/x-www-form-urlencoded" },
-      body: new URLSearchParams({ grant_type: "client_credentials", client_id: "admin-a", client_secret: adminASecret }),
-    });
-    const body = await res.json();
-    expect(body.access_token).toBeDefined();
-    adminAJwt = body.access_token;
-    const payload = JSON.parse(atob(adminAJwt.split(".")[1]));
-    expect(payload.tenant_id).toBe(tenantAId);
+  test("bootstrap token consumed — cannot reuse", async () => {
+    const res = await post("/admin/workspaces", { name: "admin2" }, { "X-Bootstrap-Token": bootstrapToken });
+    expect(res.status).toBe(401);
   });
 });
 
-// ─── Token Endpoint ───
+// ─── Token ───
 
 describe("POST /token", () => {
+  test("client_credentials returns JWT", async () => {
+    const res = await fetch(`${baseUrl}/token`, {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({ grant_type: "client_credentials", client_id: "admin", client_secret: adminSecret }),
+    });
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.access_token).toBeDefined();
+    expect(body.token_type).toBe("Bearer");
+    adminJwt = body.access_token;
+
+    const payload = JSON.parse(atob(adminJwt.split(".")[1]));
+    expect(payload.sub).toBe(adminId);
+    expect(payload.name).toBe("admin");
+    expect(payload.admin).toBe(true);
+  });
+
   test("wrong secret rejected", async () => {
     const res = await fetch(`${baseUrl}/token`, {
       method: "POST",
       headers: { "Content-Type": "application/x-www-form-urlencoded" },
-      body: new URLSearchParams({ grant_type: "client_credentials", client_id: "admin-a", client_secret: "wrong" }),
+      body: new URLSearchParams({ grant_type: "client_credentials", client_id: "admin", client_secret: "wrong" }),
     });
     expect(res.status).toBe(401);
   });
 
-  test("wrong grant type rejected", async () => {
+  test("unsupported grant type rejected", async () => {
     const res = await fetch(`${baseUrl}/token`, {
       method: "POST",
       headers: { "Content-Type": "application/x-www-form-urlencoded" },
-      body: new URLSearchParams({ grant_type: "authorization_code", client_id: "admin-a", client_secret: adminASecret }),
+      body: new URLSearchParams({ grant_type: "authorization_code", client_id: "admin", client_secret: adminSecret }),
     });
     expect(res.status).toBe(400);
   });
 
   test("JSON body works", async () => {
-    const res = await post("/token", { grant_type: "client_credentials", client_id: "admin-a", client_secret: adminASecret });
+    const res = await post("/token", { grant_type: "client_credentials", client_id: "admin", client_secret: adminSecret });
     expect(res.status).toBe(200);
   });
 });
@@ -254,6 +169,7 @@ describe("well-known", () => {
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body.jwks_uri).toContain("/.well-known/jwks.json");
+    expect(body.grant_types_supported).toContain("client_credentials");
   });
 
   test("JWKS", async () => {
@@ -264,193 +180,64 @@ describe("well-known", () => {
   });
 });
 
-// ─── Tenant Isolation ───
+// ─── Workspaces CRUD ───
 
-describe("tenant isolation", () => {
-  let userAId: string;
-  let groupAId: string;
+describe("workspaces", () => {
+  let wsId: string;
 
-  test("admin A can create user in tenant A", async () => {
-    const res = await post("/admin/users", { username: "svc-a" }, authA());
+  test("create workspace", async () => {
+    const res = await post("/admin/workspaces", { name: "hive-prod" }, auth());
     expect(res.status).toBe(201);
     const body = await res.json();
-    expect(body.tenant_id).toBe(tenantAId);
-    userAId = body.id;
+    expect(body.name).toBe("hive-prod");
+    expect(body.admin).toBe(false);
+    expect(body.client_secret).toMatch(/^[a-f0-9]{64}$/);
+    wsId = body.id;
   });
 
-  test("admin A can list users — only sees tenant A users", async () => {
-    const res = await get("/admin/users", authA());
-    const users = await res.json();
-    expect(users.every((u: any) => u.tenant_id === tenantAId)).toBe(true);
-    // admin-b should NOT appear (different tenant)
-    expect(users.find((u: any) => u.username === "admin-b")).toBeUndefined();
-  });
-
-  test("admin B cannot access tenant A user by id", async () => {
-    const res = await get(`/admin/users/${userAId}`, authB());
-    expect(res.status).toBe(404);
-  });
-
-  test("admin A can create group in tenant A", async () => {
-    const res = await post("/admin/groups", { name: "engineers" }, authA());
+  test("create admin workspace", async () => {
+    const res = await post("/admin/workspaces", { name: "cortex", admin: true }, auth());
     expect(res.status).toBe(201);
+    expect((await res.json()).admin).toBe(true);
+  });
+
+  test("list workspaces", async () => {
+    const res = await get("/admin/workspaces", auth());
+    expect(res.status).toBe(200);
     const body = await res.json();
-    expect(body.tenant_id).toBe(tenantAId);
-    groupAId = body.id;
+    expect(body.length).toBeGreaterThanOrEqual(2);
+    expect(body.every((w: any) => !w.client_secret)).toBe(true);
   });
 
-  test("admin B cannot access tenant A group by id", async () => {
-    const res = await get(`/admin/groups/${groupAId}`, authB());
-    expect(res.status).toBe(404);
-  });
-
-  test("admin A can add tenant A user to tenant A group", async () => {
-    const res = await post(`/admin/groups/${groupAId}/members`, { userId: userAId }, authA());
-    expect(res.status).toBe(201);
-  });
-
-  test("admin B cannot delete tenant A group", async () => {
-    const res = await del(`/admin/groups/${groupAId}`, authB());
-    expect(res.status).toBe(404);
-  });
-
-  test("same group name allowed in different tenants", async () => {
-    const res = await post("/admin/groups", { name: "engineers" }, authB());
-    expect(res.status).toBe(201);
-  });
-});
-
-// ─── Users CRUD ───
-
-describe("users CRUD", () => {
-  let userId: string;
-
-  test("create user", async () => {
-    const res = await post("/admin/users", { username: "svc-deploy" }, authA());
-    expect(res.status).toBe(201);
-    userId = (await res.json()).id;
-  });
-
-  test("get user", async () => {
-    const res = await get(`/admin/users/${userId}`, authA());
+  test("get workspace by id", async () => {
+    const res = await get(`/admin/workspaces/${wsId}`, auth());
     expect(res.status).toBe(200);
+    expect((await res.json()).name).toBe("hive-prod");
   });
 
-  test("update user", async () => {
-    const res = await patch(`/admin/users/${userId}`, { active: false }, authA());
-    expect(res.status).toBe(200);
-    expect((await res.json()).active).toBe(false);
-  });
-
-  test("duplicate username rejected", async () => {
-    const res = await post("/admin/users", { username: "admin-a" }, authA());
+  test("duplicate name rejected", async () => {
+    const res = await post("/admin/workspaces", { name: "hive-prod" }, auth());
     expect(res.status).toBe(409);
   });
 
-  test("delete user", async () => {
-    const res = await del(`/admin/users/${userId}`, authA());
-    expect(res.status).toBe(204);
-  });
-});
-
-// ─── Groups CRUD ───
-
-describe("groups CRUD", () => {
-  let groupId: string;
-  let memberId: string;
-
-  test("create group", async () => {
-    const res = await post("/admin/groups", { name: "ops" }, authA());
-    expect(res.status).toBe(201);
-    groupId = (await res.json()).id;
-  });
-
-  test("list groups", async () => {
-    const res = await get("/admin/groups", authA());
-    const groups = await res.json();
-    expect(groups.every((g: any) => g.tenant_id === tenantAId)).toBe(true);
-  });
-
-  test("add member", async () => {
-    const userRes = await post("/admin/users", { username: "svc-ops" }, authA());
-    memberId = (await userRes.json()).id;
-    const res = await post(`/admin/groups/${groupId}/members`, { userId: memberId }, authA());
-    expect(res.status).toBe(201);
-    expect((await res.json()).members).toContain(memberId);
-  });
-
-  test("remove member", async () => {
-    const res = await del(`/admin/groups/${groupId}/members/${memberId}`, authA());
-    expect(res.status).toBe(204);
-  });
-
-  test("update group", async () => {
-    const res = await patch(`/admin/groups/${groupId}`, { name: "platform" }, authA());
-    expect(res.status).toBe(200);
-    expect((await res.json()).name).toBe("platform");
-  });
-
-  test("delete group", async () => {
-    const res = await del(`/admin/groups/${groupId}`, authA());
-    expect(res.status).toBe(204);
-  });
-});
-
-// ─── SCIM Targets ───
-
-describe("scim-targets", () => {
-  let targetId: string;
-
-  test("create scim target", async () => {
-    const res = await post("/admin/scim-targets", {
-      name: "okta",
-      url: "https://scim.example.com/v2",
-      token: "tok-123",
-    }, authA());
-    expect(res.status).toBe(201);
-    const body = await res.json();
-    expect(body.tenant_id).toBe(tenantAId);
-    targetId = body.id;
-  });
-
-  test("admin B cannot see tenant A scim targets", async () => {
-    const res = await get("/admin/scim-targets", authB());
-    const targets = await res.json();
-    expect(targets.find((t: any) => t.id === targetId)).toBeUndefined();
-  });
-
-  test("invalid url rejected", async () => {
-    const res = await post("/admin/scim-targets", {
-      name: "bad",
-      url: "not-a-url",
-      token: "tok",
-    }, authA());
-    expect(res.status).toBe(400);
-  });
-
-  test("delete scim target", async () => {
-    const res = await del(`/admin/scim-targets/${targetId}`, authA());
-    expect(res.status).toBe(204);
-  });
-});
-
-// ─── JWT contains tenant_id and groups ───
-
-describe("JWT claims", () => {
-  test("JWT includes tenant_id and groups", async () => {
-    const groupRes = await post("/admin/groups", { name: "jwt-test-group" }, authA());
-    const { id: gid } = await groupRes.json();
-    await post(`/admin/groups/${gid}/members`, { userId: adminAId }, authA());
-
+  test("non-admin JWT rejected", async () => {
+    const createRes = await post("/admin/workspaces", { name: "svc-nonadmin" }, auth());
+    const { client_secret: secret } = await createRes.json();
     const tokenRes = await fetch(`${baseUrl}/token`, {
       method: "POST",
       headers: { "Content-Type": "application/x-www-form-urlencoded" },
-      body: new URLSearchParams({ grant_type: "client_credentials", client_id: "admin-a", client_secret: adminASecret }),
+      body: new URLSearchParams({ grant_type: "client_credentials", client_id: "svc-nonadmin", client_secret: secret }),
     });
     const { access_token } = await tokenRes.json();
-    const payload = JSON.parse(atob(access_token.split(".")[1]));
-    expect(payload.tenant_id).toBe(tenantAId);
-    expect(payload.groups).toContain("jwt-test-group");
+    const res = await get("/admin/workspaces", { Authorization: `Bearer ${access_token}` });
+    expect(res.status).toBe(403);
+  });
+
+  test("delete workspace", async () => {
+    const res = await del(`/admin/workspaces/${wsId}`, auth());
+    expect(res.status).toBe(204);
+    const check = await get(`/admin/workspaces/${wsId}`, auth());
+    expect(check.status).toBe(404);
   });
 });
 
@@ -458,19 +245,19 @@ describe("JWT claims", () => {
 
 describe("key rotation", () => {
   test("rotate key", async () => {
-    const res = await post("/admin/keys/rotate", {}, authA());
+    const res = await post("/admin/keys/rotate", {}, auth());
     expect(res.status).toBe(201);
   });
 
   test("list keys shows old + new", async () => {
-    const res = await get("/admin/keys", authA());
+    const res = await get("/admin/keys", auth());
     const keys = await res.json();
     expect(keys.filter((k: any) => k.active).length).toBe(1);
     expect(keys.filter((k: any) => !k.active).length).toBeGreaterThanOrEqual(1);
   });
 
   test("old JWT still valid after rotation", async () => {
-    const res = await get("/admin/users", authA());
+    const res = await get("/admin/workspaces", auth());
     expect(res.status).toBe(200);
   });
 
@@ -478,22 +265,6 @@ describe("key rotation", () => {
     const res = await get("/.well-known/jwks.json");
     const body = await res.json();
     expect(body.keys.length).toBeGreaterThanOrEqual(2);
-  });
-});
-
-// ─── Tenant GET ───
-
-describe("GET /tenants/:id", () => {
-  test("admin can get own tenant", async () => {
-    const res = await get(`/tenants/${tenantAId}`, authA());
-    expect(res.status).toBe(200);
-    const body = await res.json();
-    expect(body.name).toBe("Acme Corp");
-  });
-
-  test("admin cannot get other tenant", async () => {
-    const res = await get(`/tenants/${tenantBId}`, authA());
-    expect(res.status).toBe(403);
   });
 });
 

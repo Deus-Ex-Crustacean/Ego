@@ -1,4 +1,4 @@
-import { createHash, createSign, createVerify, createPublicKey, generateKeyPairSync, type KeyObject } from "crypto";
+import { createHash, createSign, createVerify, createPublicKey, generateKeyPairSync } from "crypto";
 import { db } from "./db.ts";
 import { TOKEN_EXPIRY_SECONDS } from "./config.ts";
 import type { SigningKey } from "./types.ts";
