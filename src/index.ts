@@ -110,6 +110,7 @@ const ldClient = ldSdkKey ? LaunchDarkly.init(ldSdkKey, {
       serviceName: "ego",
       serviceVersion: process.env.npm_package_version || "dev",
       environment: process.env.NODE_ENV || "production",
+      consoleMethodsToRecord: ["warn", "error"],
     }),
   ],
 }) : null;
