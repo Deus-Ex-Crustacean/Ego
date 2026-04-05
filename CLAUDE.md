@@ -4,12 +4,12 @@
 
 
 ## Project
-Ego is a machine-to-machine identity provider with SCIM push support. Bun runtime, native SQLite, zero external runtime dependencies beyond LaunchDarkly SDKs.
+Ego is a minimal machine-to-machine token issuer. Bun runtime, native SQLite, zero external runtime dependencies beyond LaunchDarkly SDKs.
 
 ## Running
 ```bash
 bun run src/index.ts   # requires LD_SDK_KEY env var for LaunchDarkly
-bun test               # 34 tests
+bun test               # 22 tests
 ```
 
 ## Team
